@@ -121,7 +121,7 @@
                 terData = rawData.filter(row => {
                     const ev = String(row['Evento']||"").toUpperCase();
                     return String(row['Origem']||"") === 'TER' && 
-                           !ev.includes('DESLOCAMENTO') && !ev.includes('RESERVA') && !ev.includes('PLANTAO');
+                           !ev.includes('DESLOCAMENTO') && !ev.includes('RESERVA')  && !ev.includes('Intra-jornada não remunerada padrão') && !ev.includes('PLANTAO');
                 }).sort((a, b) => a['Início'].localeCompare(b['Início']));
                 applyAllFilters();
             }
