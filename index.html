@@ -49,7 +49,7 @@
         <button class="btn btn-refresh" onclick="fetchData()">🔄 Atualizar Agora</button>
     </div>
     <div class="controls">
-        <input type="text" id="filter-linha" placeholder="🔍 Linha (Inicia com...)">
+        <input type="text" id="filter-linha" placeholder="🔍 Linha (Ex: 21, 528)">
         <input type="text" id="filter-trip" placeholder="👤 Tripulante">
         <input type="text" id="filter-veiculo" placeholder="🚌 Veículo">
         <button class="btn btn-toggle active" id="btn-view-mode">Visão Próximos Horários</button>
@@ -66,7 +66,7 @@
                 </tr>
             </thead>
             <tbody id="table-body">
-                <tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--secondary);">Carregando dados da escala...</td></tr>
+                <tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--secondary);">Conectando à planilha operacional...</td></tr>
             </tbody>
         </table>
     </div>
@@ -82,11 +82,15 @@
     </div>
 </div>
 <script>
+    // URL AUTOMÁTICA DO GOOGLE SHEETS
     const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTnT2K7KGf-Tr8vC_E4gTgovxgxDNRkUtMAWZv2gHkUdrQDxNaMAUO_I-4tXeV1eSAa2FFH7_k-VD9p/pub?gid=0&single=true&output=csv";
+    
     let rawData = [], terData = [];
     let showAll = false;
+
     setInterval(() => { document.getElementById('real-clock').innerText = new Date().toLocaleTimeString('pt-BR'); }, 1000);
     window.onload = fetchData;
+
     function fetchData() {
         Papa.parse(CSV_URL, {
             download: true, header: true, skipEmptyLines: true,
@@ -105,32 +109,60 @@
             }
         });
     }
+
     function applyAllFilters() {
         if (terData.length === 0) return;
         let filtered = terData;
+
         if (!showAll) {
             const now = new Date();
             now.setMinutes(now.getMinutes() - 10);
             const timeLimit = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
             filtered = filtered.filter(r => r['Início'] >= timeLimit);
         }
-        const l = document.getElementById('filter-linha').value.toLowerCase();
-        const t = document.getElementById('filter-trip').value.toLowerCase();
-        const v = document.getElementById('filter-veiculo').value.toLowerCase();
-        
+
+        const lInput = document.getElementById('filter-linha').value.trim().toLowerCase();
+        const tInput = document.getElementById('filter-trip').value.trim().toLowerCase();
+        const vInput = document.getElementById('filter-veiculo').value.trim().toLowerCase();
+
         filtered = filtered.filter(r => {
-            // AJUSTE AQUI: Busca da Linha agora é por INÍCIO (startsWith)
-            const matchLinha = String(r['Linha']).toLowerCase().startsWith(l);
-            const matchTrip = String(r['Tripulante']).toLowerCase().includes(t);
-            const matchVeic = String(r['Veículo']).toLowerCase().includes(v);
-            return matchLinha && matchTrip && matchVeic;
+            const linhaStr = String(r['Linha'] || "").toLowerCase().trim();
+            const tripStr = String(r['Tripulante'] || "").toLowerCase().trim();
+            const veicStr = String(r['Veículo'] || "").toLowerCase().trim();
+
+            // Lógica de Precisão para Linha (21 != 219 e 21 == 021)
+            let matchLinha = true;
+            if (lInput !== "") {
+                const normData = linhaStr.replace(/^0+/, ''); // Remove zeros à esquerda (021 -> 21)
+                const normInput = lInput.replace(/^0+/, ''); // Remove zeros da busca (021 -> 21)
+                
+                if (normData === normInput) {
+                    matchLinha = true; // Batida exata
+                } else if (normData.startsWith(normInput)) {
+                    // Verifica se o próximo caractere após a busca NÃO é um número
+                    const nextChar = normData.charAt(normInput.length);
+                    matchLinha = (nextChar === "" || isNaN(parseInt(nextChar)));
+                } else {
+                    matchLinha = false;
+                }
+            }
+
+            return matchLinha && tripStr.includes(tInput) && veicStr.includes(vInput);
         });
+
         renderTable(filtered);
     }
+
     function renderTable(data) {
         const b = document.getElementById('table-body'); b.innerHTML = '';
-        const nowStr = new Date().getHours().toString().padStart(2,'0') + ":" + new Date().getMinutes().toString().padStart(2,'0');
-        if (data.length === 0) { b.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem;">Nenhuma saída próxima encontrada.</td></tr>'; return; }
+        const now = new Date();
+        const nowStr = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
+
+        if (data.length === 0) {
+            b.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem;">Nenhuma saída encontrada com estes filtros.</td></tr>';
+            return;
+        }
+
         data.forEach(row => {
             const tr = document.createElement('tr');
             if (row['Início'].substring(0,5) === nowStr) tr.className = 'highlight-now';
@@ -142,27 +174,32 @@
             b.appendChild(tr);
         });
     }
+
     document.getElementById('btn-view-mode').onclick = function() {
         showAll = !showAll;
         this.innerText = showAll ? "Visão Dia Completo" : "Visão Próximos Horários";
         this.classList.toggle('active', !showAll);
         applyAllFilters();
     };
+
     document.querySelectorAll('.controls input').forEach(i => i.oninput = applyAllFilters);
+
     function showVehicleSchedule(v) {
+        if (!v || v === 'undefined' || v === '-') return;
         document.getElementById('modal-title').innerText = "Veículo: " + v;
         const c = document.getElementById('modal-content'); c.innerHTML = '';
         rawData.filter(r => r['Veículo'] === v).sort((a,b)=>a['Início'].localeCompare(b['Início'])).forEach(item => {
             const isTer = item['Origem'] === 'TER';
             const div = document.createElement('div');
-            div.className = `schedule-item \${isTer ? 'is-ter' : ''}`;
-            div.innerHTML = `<b>\${item['Início']} - \${item['Linha']||'---'}</b><br>
-                             <small>\${item['Evento']} | \${item['Origem']} ➔ \${item['Destino']}</small><br>
-                             <small>Trip: \${item['Tripulante']}</small>`;
+            div.className = `schedule-item ${isTer ? 'is-ter' : ''}`;
+            div.innerHTML = `<b>${item['Início']} - ${item['Linha']||'---'}</b><br>
+                             <small>${item['Evento']} | ${item['Origem']} ➔ ${item['Destino']}</small><br>
+                             <small>Trip: ${item['Tripulante']}</small>`;
             c.appendChild(div);
         });
         document.getElementById('modal').style.display = 'block'; document.getElementById('overlay').style.display = 'block';
     }
+
     function closeModal() { document.getElementById('modal').style.display='none'; document.getElementById('overlay').style.display='none'; }
 </script>
 </body>
