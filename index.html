@@ -66,7 +66,7 @@
                 </tr>
             </thead>
             <tbody id="table-body">
-                <tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--secondary);">Conectando à planilha operacional...</td></tr>
+                <tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--secondary);">Carregando dados da escala...</td></tr>
             </tbody>
         </table>
     </div>
@@ -75,14 +75,16 @@
 <div id="modal">
     <div class="modal-inner">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-            <h3 id="modal-title" style="margin:0;">Escala do Carro</h3>
+            <div>
+                <h3 id="modal-title" style="margin:0;">Escala</h3>
+                <small id="modal-subtitle" style="color:var(--secondary);"></small>
+            </div>
             <button onclick="closeModal()" style="border:none; background:none; font-size:1.5rem; cursor:pointer;">&times;</button>
         </div>
         <div id="modal-content"></div>
     </div>
 </div>
 <script>
-    // URL AUTOMÁTICA DO GOOGLE SHEETS
     const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTnT2K7KGf-Tr8vC_E4gTgovxgxDNRkUtMAWZv2gHkUdrQDxNaMAUO_I-4tXeV1eSAa2FFH7_k-VD9p/pub?gid=0&single=true&output=csv";
     
     let rawData = [], terData = [];
@@ -130,23 +132,19 @@
             const tripStr = String(r['Tripulante'] || "").toLowerCase().trim();
             const veicStr = String(r['Veículo'] || "").toLowerCase().trim();
 
-            // Lógica de Precisão para Linha (21 != 219 e 21 == 021)
             let matchLinha = true;
             if (lInput !== "") {
-                const normData = linhaStr.replace(/^0+/, ''); // Remove zeros à esquerda (021 -> 21)
-                const normInput = lInput.replace(/^0+/, ''); // Remove zeros da busca (021 -> 21)
-                
+                const normData = linhaStr.replace(/^0+/, ''); 
+                const normInput = lInput.replace(/^0+/, ''); 
                 if (normData === normInput) {
-                    matchLinha = true; // Batida exata
+                    matchLinha = true; 
                 } else if (normData.startsWith(normInput)) {
-                    // Verifica se o próximo caractere após a busca NÃO é um número
                     const nextChar = normData.charAt(normInput.length);
                     matchLinha = (nextChar === "" || isNaN(parseInt(nextChar)));
                 } else {
                     matchLinha = false;
                 }
             }
-
             return matchLinha && tripStr.includes(tInput) && veicStr.includes(vInput);
         });
 
@@ -159,14 +157,14 @@
         const nowStr = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
 
         if (data.length === 0) {
-            b.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem;">Nenhuma saída encontrada com estes filtros.</td></tr>';
+            b.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:2rem;">Nenhuma saída encontrada.</td></tr>';
             return;
         }
 
         data.forEach(row => {
             const tr = document.createElement('tr');
             if (row['Início'].substring(0,5) === nowStr) tr.className = 'highlight-now';
-            tr.innerHTML = `<td class="clickable-time" onclick="showVehicleSchedule('${row['Veículo']}')">${row['Início']}</td>
+            tr.innerHTML = `<td class="clickable-time" onclick="showVehicleSchedule('${row['Veículo']}', '${row['Linha']}')">${row['Início']}</td>
                             <td style="font-weight:700">${row['Linha']}</td>
                             <td>${row['Tripulante']}</td>
                             <td>${row['Origem']}</td>
@@ -184,11 +182,18 @@
 
     document.querySelectorAll('.controls input').forEach(i => i.oninput = applyAllFilters);
 
-    function showVehicleSchedule(v) {
+    function showVehicleSchedule(v, l) {
         if (!v || v === 'undefined' || v === '-') return;
+        
         document.getElementById('modal-title').innerText = "Veículo: " + v;
+        document.getElementById('modal-subtitle').innerText = "Linha: " + l;
+        
         const c = document.getElementById('modal-content'); c.innerHTML = '';
-        rawData.filter(r => r['Veículo'] === v).sort((a,b)=>a['Início'].localeCompare(b['Início'])).forEach(item => {
+        
+        // FILTRO DUPLO: Veículo e Linha
+        rawData.filter(r => r['Veículo'] === v && r['Linha'] === l)
+               .sort((a,b)=>a['Início'].localeCompare(b['Início']))
+               .forEach(item => {
             const isTer = item['Origem'] === 'TER';
             const div = document.createElement('div');
             div.className = `schedule-item ${isTer ? 'is-ter' : ''}`;
